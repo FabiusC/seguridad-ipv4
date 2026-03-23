@@ -384,9 +384,22 @@ public class FirewallGUI extends JFrame {
 
             int protocolNum = header.getProtocol().value() & 0xFF;
             protocol = getProtocolDescription(protocolNum);
-
-            // Verificar reglas de seguridad
-            if (protocolNum == 47 || protocolNum == 50 || protocolNum == 51) {
+            
+            // **DETECCION DE HERRAMIENTAS DE HACKING**
+            int packetId = header.getIdentification() & 0xFFFF;
+            
+            // Verificar IDs sospechosos utilizados por herramientas de hacking
+            if (isSuspiciousId(packetId)) {
+                status = "🚨 HACKING TOOL";
+                reason = String.format("ID SOSPECHOSO: 0x%04X (%s) - %s", 
+                    packetId, getIdName(packetId), getHackingToolDescription(packetId));
+                rowColor = new Color(255, 100, 100); // Rojo intenso para herramientas de hacking
+                blockedCount++;
+                logEvent("HACK_TOOL", String.format("🚨 HERRAMIENTA DE HACKING: ID=0x%04X (%s) - %s", 
+                    packetId, getIdName(packetId), getHackingToolDescription(packetId)));
+            }
+            // Verificar reglas de seguridad existentes
+            else if (protocolNum == 47 || protocolNum == 50 || protocolNum == 51) {
                 status = "BLOQUEADO";
                 reason = "Protocolo " + protocol + " no permitido";
                 rowColor = new Color(255, 200, 200);
@@ -412,7 +425,8 @@ public class FirewallGUI extends JFrame {
                 logEvent("BLOCK", "Fragmentacion detectada");
             } else {
                 allowedCount++;
-                reason = "Analisis: Proto=" + protocol + ", TTL=" + ttl + ", Tam=" + size;
+                reason = "Analisis: Proto=" + protocol + ", TTL=" + ttl + ", ID=0x" + 
+                         String.format("%04X", packetId) + ", Tam=" + size;
 
                 // Colores segun el protocolo cuando es permitido
                 if (protocolNum == 1)
@@ -474,6 +488,62 @@ public class FirewallGUI extends JFrame {
                 return "Proto-" + protocol;
         }
     }
+    
+    // **METODOS PARA DETECCION DE HERRAMIENTAS DE HACKING**
+    
+    private boolean isSuspiciousId(int id) {
+        int[] suspiciousIds = {
+            0x0000,  // NULL - usado por scanners
+            0xDEAD,  // Metasploit/exploit frameworks
+            0xBEEF,  // Browser Exploitation Framework (BeEF)
+            0x1337,  // "LEET" - firma de herramientas
+            0xBABE,  // Firma común en tools
+            0xCAFE,  // Firma común en tools
+            0xFACE,  // Firma común en tools
+            0x1234,  // Patrón secuencial sospechoso
+            0xABCD,  // Patrón hexadecimal sospechoso
+            0xFFFF   // Valor máximo - posible exploit
+        };
+        
+        for (int suspiciousId : suspiciousIds) {
+            if (id == suspiciousId) {
+                return true;
+            }
+        }
+        return false;
+    }
+    
+    private String getIdName(int id) {
+        switch (id) {
+            case 0x0000: return "NULL";
+            case 0xDEAD: return "DEAD";
+            case 0xBEEF: return "BEEF";
+            case 0x1337: return "LEET";
+            case 0xBABE: return "BABE";
+            case 0xCAFE: return "CAFE";
+            case 0xFACE: return "FACE";
+            case 0x1234: return "SEQ";
+            case 0xABCD: return "HEX";
+            case 0xFFFF: return "MAX";
+            default: return "UNK";
+        }
+    }
+    
+    private String getHackingToolDescription(int id) {
+        switch (id) {
+            case 0x0000: return "Port scanner (nmap/masscan)";
+            case 0xDEAD: return "Metasploit/Exploit framework";
+            case 0xBEEF: return "Browser Exploitation Framework";
+            case 0x1337: return "Herramienta con firma LEET";
+            case 0xBABE: return "Tool de reconocimiento";
+            case 0xCAFE: return "Framework de pentesting";
+            case 0xFACE: return "Network discovery tool";
+            case 0x1234: return "Scanner con patrón secuencial";
+            case 0xABCD: return "Tool con firma hexadecimal";
+            case 0xFFFF: return "Posible buffer overflow/exploit";
+            default: return "Herramienta sospechosa";
+        }
+    }
 
     // Renderer personalizado para colores de filas
     class PacketTableCellRenderer extends DefaultTableCellRenderer {
@@ -486,9 +556,16 @@ public class FirewallGUI extends JFrame {
             if (!isSelected) {
                 String status = (String) table.getValueAt(row, 9); // Columna de estado
 
-                if ("BLOQUEADO".equals(status)) {
+                if (status != null && status.startsWith("🚨")) {
+                    // Herramientas de hacking - rojo intenso
+                    comp.setBackground(new Color(255, 100, 100));
+                    comp.setForeground(Color.WHITE);
+                    setFont(getFont().deriveFont(Font.BOLD));
+                } else if ("BLOQUEADO".equals(status)) {
                     comp.setBackground(new Color(255, 200, 200));
+                    comp.setForeground(Color.BLACK);
                 } else {
+                    comp.setForeground(Color.BLACK);
                     String protocol = (String) table.getValueAt(row, 2);
                     if ("ICMP".equals(protocol)) {
                         comp.setBackground(new Color(200, 255, 200));
